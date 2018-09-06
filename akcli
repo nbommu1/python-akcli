@@ -255,7 +255,7 @@ args = parse_arguments()
 
 # Find the full path to the config file.
 # since there is no way to provide CCU purge access to the existing api client
-# in akamai, we want to use shared keys for CCU purge until we have a solution.
+# in akamai, we want to use separate keys for CCU purge.
 
 if args.api == 'ccu':
    configfile = '/etc/akamai-edgerc'
