@@ -1,0 +1,332 @@
+#!/bin/env python
+
+##### akapi
+#
+# Talk to the Akamai API.
+
+### Imports
+
+from akamai.edgegrid import EdgeGridAuth,EdgeRc
+import argparse
+import ConfigParser
+import sys, os
+import requests
+import ccu
+import json
+import pprint
+import cloudlets_redirects
+from dns import AkamaiDNS
+
+### http_calls.py
+
+# This is http_calls.py, from https://github.com/akamai-open/api-kickstart/blob/master/examples/python/http_calls.py
+# as of 2016-02-14, eb0be2eaa139b361fffc7de144ff3e3c920ee8b8, edited to
+# remove unnecessary imports.
+
+## begin http_calls.py
+
+# Python edgegrid module
+""" Copyright 2015 Akamai Technologies, Inc. All Rights Reserved.
+ 
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ 
+ You may obtain a copy of the License at
+    
+    http://www.apache.org/licenses/LICENSE-2.0
+ 
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+"""
+
+if sys.version_info[0] >= 3:
+     # python3
+     from urllib import parse
+else:
+     # python2.7
+     import urlparse as parse
+
+class EdgeGridHttpCaller():
+    def __init__(self, session, debug, verbose, baseurl):
+        self.debug = debug
+        self.verbose = verbose
+        self.session = session
+        self.baseurl = baseurl
+        return None
+   
+    def urlJoin(self, url, path):
+        return parse.urljoin(url, path)
+ 
+    def getResult(self, endpoint, parameters=None):
+      path = endpoint
+      endpoint_result = self.session.get(parse.urljoin(self.baseurl,path), params=parameters)
+      if self.verbose: print (">>>\n" + json.dumps(endpoint_result.json(), indent=2) + "\n<<<\n")
+      status = endpoint_result.status_code
+      if self.verbose: print( "LOG: GET %s %s %s" % (endpoint,status,endpoint_result.headers["content-type"]))
+      self.httpErrors(endpoint_result.status_code, path, endpoint_result.json())
+      return endpoint_result.json()
+    
+    def httpErrors(self, status_code, endpoint, result):
+      if not isinstance(result, list):
+      	details = result.get('detail') or result.get('details') or ""
+      else:
+        details = ""
+      if status_code == 403:
+                    error_msg =  "ERROR: Call to %s failed with a 403 result\n" % endpoint
+                    error_msg +=  "ERROR: This indicates a problem with authorization.\n"
+                    error_msg +=  "ERROR: Please ensure that the credentials you created for this script\n"
+                    error_msg +=  "ERROR: have the necessary permissions in the Luna portal.\n"
+                    error_msg +=  "ERROR: Problem details: %s\n" % details
+                    exit(error_msg)
+      
+      if status_code in [400, 401]:
+                    error_msg =  "ERROR: Call to %s failed with a %s result\n" % (endpoint, status_code)
+                    error_msg +=  "ERROR: This indicates a problem with authentication or headers.\n"
+                    error_msg +=  "ERROR: Please ensure that the .edgerc file is formatted correctly.\n"
+                    error_msg +=  "ERROR: If you still have issues, please use gen_edgerc.py to generate the credentials\n"
+                    error_msg +=  "ERROR: Problem details: %s\n" % result
+                    exit(error_msg)
+      
+      if status_code in [404]:
+                    error_msg =  "ERROR: Call to %s failed with a %s result\n" % (endpoint, status_code)
+                    error_msg +=  "ERROR: This means that the page does not exist as requested.\n"
+                    error_msg +=  "ERROR: Please ensure that the URL you're calling is correctly formatted\n"
+                    error_msg +=  "ERROR: or look at other examples to make sure yours matches.\n"
+                    error_msg +=  "ERROR: Problem details: %s\n" % details
+                    exit(error_msg)
+      
+      error_string = None
+      if "errorString" in result:
+                   if result["errorString"]:
+                           error_string = result["errorString"]
+      else:
+        for key in result:
+          if type(key) is not str or isinstance(result, dict) or not isinstance(result[key], dict):
+            continue
+          if "errorString" in result[key] and type(result[key]["errorString"]) is str:
+            error_string = result[key]["errorString"]
+      if error_string:
+                    error_msg =  "ERROR: Call caused a server fault.\n"
+                    error_msg +=  "ERROR: Please check the problem details for more information:\n"
+                    error_msg +=  "ERROR: Problem details: %s\n" % error_string
+                    exit(error_msg)
+    
+    def postResult(self, endpoint, body, parameters=None):
+        headers = {'content-type': 'application/json'}
+        path = endpoint
+        endpoint_result = self.session.post(parse.urljoin(self.baseurl,path), data=body, headers=headers, params=parameters)
+        status = endpoint_result.status_code
+        if self.verbose: print ("LOG: POST %s %s %s" % (path,status,endpoint_result.headers["content-type"]))
+        if status == 204:
+           return {}
+        self.httpErrors(endpoint_result.status_code, path, endpoint_result.json())
+        
+        if self.verbose: print (">>>\n" + json.dumps(endpoint_result.json(), indent=2) + "\n<<<\n")
+        return endpoint_result.json()
+
+    def postFiles(self, endpoint, file):
+        path = endpoint
+        endpoint_result = self.session.post(parse.urljoin(self.baseurl,path), files=file)
+        status = endpoint_result.status_code
+        if self.verbose: print ("LOG: POST FILES %s %s %s" % (path,status,endpoint_result.headers["content-type"]))
+        if status == 204:
+           return {}
+        self.httpErrors(endpoint_result.status_code, path, endpoint_result.json())
+        
+        if self.verbose: print (">>>\n" + json.dumps(endpoint_result.json(), indent=2) + "\n<<<\n")
+        return endpoint_result.json()
+    
+    def putResult(self, endpoint, body, parameters=None):
+        headers = {'content-type': 'application/json'}
+        path = endpoint
+        
+        endpoint_result = self.session.put(parse.urljoin(self.baseurl,path), data=body, headers=headers, params=parameters)
+        status = endpoint_result.status_code
+        if self.verbose: print ("LOG: PUT %s %s %s" % (endpoint,status,endpoint_result.headers["content-type"]))
+        if status == 204:
+            return {}
+        if self.verbose: print (">>>\n" + json.dumps(endpoint_result.json(), indent=2) + "\n<<<\n")
+        return endpoint_result.json()
+    
+    def deleteResult(self, endpoint):
+        endpoint_result = self.session.delete(parse.urljoin(self.baseurl,endpoint))
+        status = endpoint_result.status_code
+        if self.verbose: print ("LOG: DELETE %s %s %s" % (endpoint,status,endpoint_result.headers["content-type"]))
+        if status == 204:
+            return {}
+        if self.verbose: print (">>>\n" + json.dumps(endpoint_result.json(), indent=2) + "\n<<<\n")
+        return endpoint_result.json()
+
+## end http_calls.py
+
+### Functions
+
+## parse_arguments
+#
+# The first argument tells what API to talk to: 'ccu' for the Content
+# Control Utility (to purge the cache), 'cloudlets' create edge redirects,
+# others to be added (e.g. the diagnostic tools API, which we were interested
+# in for translating WAF error messages). Each takes some additional
+# arguments as well There's also a --configfile argument for the top-level command,
+# in the probably unlikely event that you need to use a different
+# config file.
+
+def parse_arguments():
+
+  parser = argparse.ArgumentParser(description="Talk to an Akamai API.")
+
+  parser.add_argument('--configfile', default='~/.akamai.cfg',
+                      help="Path to config file (default: ~/.akamai.cfg)")
+  parser.add_argument('--verbose', '-v', help='Enables verbose mode.')
+  parser.add_argument('--debug', help='Enables debug mode.')
+  parser.add_argument('--json', help='Output as JSON only for DNS.')
+
+  subparsers = parser.add_subparsers(dest='api',
+                                     title="Subcommands",
+                                     help="more help: akapi <subcommand> --help")
+
+  # Arguments to 'ccu': The type of object to purge (cpcode or arl), and
+  # one or more objects to purge, plus some optional arguments.
+
+  parser_ccu = subparsers.add_parser('ccu', help='purge the cache')
+
+  parser_ccu.add_argument('type', choices=['cpcode', 'arl' ],
+                          help="The type of object to purge")
+  parser_ccu.add_argument('objects', metavar='object', type=str, nargs='+',
+                          help="Object to purge")
+  parser_ccu.add_argument('--quiet', action='store_true',
+                          help="Turn off output")
+  parser_ccu.add_argument('--notify', default='niranjan.bommu@gmail.com'
+                          metavar='addr[,addr,...]',
+                          help="One or more e-mail addresses (comma-separated) to notify when purge is complete (default: niranjan.bommu@gmai.com)")
+
+
+  # Arguments to 'cloudlets redirects':
+
+  parser_redirect = subparsers.add_parser('redirect', help='cloudlets edge redirector')
+
+  parser_redirect.add_argument('ticket', help='jira ticket number')
+  parser_redirect.add_argument('partner', help='partner or redirect name')
+  parser_redirect.add_argument('activate', default='staging', choices=['staging', 'production'], help='activate version either staging or production')
+
+  # Arguments to 'dns':
+
+  parser_dns = subparsers.add_parser('dns', help='akamai fastDNS')
+  dns_subparse = parser_dns.add_subparsers(dest='dns')
+
+  addrecord = dns_subparse.add_parser('add_record', help="Add a record to a zone")
+  addrecord.add_argument('zone', help='name of zone')
+  addrecord.add_argument('--name', help='record name')
+  addrecord.add_argument('--type', choices=(SUPPORTED_RECORD_TYPES))
+  addrecord.add_argument('--target', help='target record')
+  addrecord.add_argument('--ttl', default=3600, help='TTL value in seconds, such as 86400')
+
+  fetchrecords = dns_subparse.add_parser('fetch_records', help='get record from zone file.')
+  fetchrecords.add_argument('zone', help='name of zone')
+  fetchrecords.add_argument('--name', help='record name')
+
+  fetchzone = dns_subparse.add_parser('fetch_zone', help="get a zone file dump")
+  fetchzone.add_argument('zone', help='name of zone')
+
+  removerecord = dns_subparse.add_parser('remove_record', help='delete record from zone file.')
+  removerecord.add_argument('zone', help='name of zone')
+  removerecord.add_argument('--type', choices=(SUPPORTED_RECORD_TYPES))
+  removerecord.add_argument('--target', help='target record')
+  removerecord.add_argument('--name', help='record name')
+
+  listrecords = dns_subparse.add_parser('list_records', help='list all records in a zone file.')
+  listrecords.add_argument('zone', help='name of zone')
+
+  # Return the arguments.
+
+  return parser.parse_args()
+
+
+
+### Main body
+
+# Parse arguments.
+
+SUPPORTED_RECORD_TYPES = ['A', 'CNAME', 'NS']
+args = parse_arguments()
+
+# Find the full path to the config file.
+# since there is no way to provide CCU purge access to the existing api client
+# in akamai, we want to use shared keys for CCU purge until we have a solution.
+
+if args.api == 'ccu':
+   configfile = '/etc/akamai-edgerc'
+else:
+   configfile = os.path.expanduser(args.configfile)
+
+# Parse the config file.
+
+akconfig = ConfigParser.RawConfigParser()
+try:
+  akconfig.readfp(open(configfile))
+except IOError, e:
+  print "ERROR: Unable to read config file ({0}): {1}".format(configfile,e)
+  sys.exit(6)
+except ConfigParser.MissingSectionHeaderError:
+  print "ERROR: Config file ({0}) contains no INI section headers".format(configfile)
+  sys.exit(6)
+
+# Open up a session for connecting to the API.
+
+apisession = requests.Session()
+
+# Set some configuration options in that session.
+
+baseurl = 'https://{}/'.format(akconfig.get('default','host'))
+apisession.auth = EdgeGridAuth.from_edgerc(configfile)
+
+# Open up an httpCaller object.
+httpCaller = EdgeGridHttpCaller(apisession, False, False, baseurl)
+
+# Take action based on the 'api' argument.
+
+if args.api == 'ccu':
+  ccu.do_purge(args, httpCaller)
+elif args.api == 'redirect':
+  cloudlets_redirects.cloudlets_edge_redirector(args, httpCaller, apisession, akconfig)
+elif args.api == 'dns':
+  akamai_dns = AkamaiDNS(baseurl, configfile)
+  if args.dns == 'list_records':
+    records = akamai_dns.list_records(zone_name=args.zone, record_type=None)
+    if args.json:
+      print json.dump(records)
+    else:
+      for record in records:
+        print "{name:30}{type:20}{target:20}{ttl:10}".format(**record)
+  elif args.dns == 'fetch_zone':
+    zone = akamai_dns.fetch_zone(zone_name=args.zone)
+    if args.json:
+      print json.dumps(zone)
+    else:
+      pp = pprint.PrettyPrinter(indent=4)
+      pp.pprint(zone)
+  elif args.dns == 'remove_record':
+    result = akamai_dns.remove_record(zone_name=args.zone, record_type=args.type, name=args.name, target=args.target)
+    if result:
+      print "Records has been removed"
+    else:
+      print "Unable to remove the record"
+  elif args.dns == 'fetch_records':
+    records = akamai_dns.fetch_records(zone_name=args.zone,record_type=None, name=args.name)
+    if args.json:
+      print json.dump(record)
+    else:
+      for record in records:
+        print "{name:30}{type:20}{target:20}{ttl:10}".format(**record)
+  elif args.dns == 'add_record':
+    result = akamai_dns.add_record(zone_name=args.zone, record_type=args.type, name=args.name, target=args.target, ttl=args.ttl)
+    if result:
+      print "Record added successfully"
+    else:
+      print "Failed to add record"
+else:
+  print "You somehow supplied an api that passed the parser, but isn't mapped to a function; exiting."
+  sys.exit(1)
