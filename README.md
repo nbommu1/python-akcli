@@ -21,7 +21,7 @@ The --json flag will format output as JSON to be consumed by other tools such as
 ## Manually
 
 ```bash
-git clone https://github.com/nbommu/python-akcli.git
+git clone https://github.com/nbommu1/python-akcli.git
 ```
 
 # Configuration
