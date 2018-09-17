@@ -35,6 +35,18 @@ client_token = abcd-yaddayadda
 client_secret = randomstuffhere
 access_token = abcd-randomstuffhere
 ```
+redirects.json
+```
+ [
+  {
+    "redirectURL": " /lap-band-update.html", 
+    "type": "erMatchRule", 
+    "name": "match-url", 
+    "matchURL": "/princess_polymath/?p=31", 
+    "statusCode": 301
+  }
+] 
+```
 since we existing api client can't do CCU purge, we have to setup separate credentails for CCU( I did that /etc/akamai-edgerc)
 # Usage
 

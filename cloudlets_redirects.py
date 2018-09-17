@@ -106,4 +106,4 @@ cloudlets_version = "create"
 cloudlets_live_file = "/tmp/cloudlets_live"
 # set up policy and redirect file
 policy = "12345"
-filename = "/etc/akamai/redirects.json"
+filename = "redirects.json"
