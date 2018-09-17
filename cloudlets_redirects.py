@@ -52,10 +52,10 @@ def cloudlets_edge_redirector(args, httpCaller, apisession, akconfig):
   partner = args.partner
   activate = args.activate
 
-  # get the current version and save it in tmp for processing later
-  old_version = get_current_version(cloudlets_live_file, httpCaller, apisession, akconfig)
 
   if cloudlets_version == "create" and activate != "production":
+     # get the current version and save it in tmp for processing later
+     old_version = get_current_version(cloudlets_live_file, httpCaller, apisession, akconfig)
      create_cloudlets_version(ticket, partner, httpCaller)
 
   # get the new verson to upload rules.
