@@ -47,7 +47,7 @@ redirects.json
   }
 ] 
 ```
-since we existing api client can't do CCU purge, we have to setup separate credentails for CCU( I did that /etc/akamai-edgerc)
+since existing api client can't do CCU purge, we have to setup separate credentails for CCU( I did that /etc/akamai-edgerc)
 # Usage
 
 ```bash
